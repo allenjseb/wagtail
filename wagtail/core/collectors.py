@@ -17,7 +17,7 @@ from taggit.models import TaggedItemBase
 from wagtail.core.blocks import (
     Block, ChooserBlock, ListBlock, RichTextBlock, StreamBlock, StructBlock)
 from wagtail.core.fields import RichTextField, StreamField
-from wagtail.core.rich_text import features
+from wagtail.core.rich_text import RichText, features
 from wagtail.core.rich_text.rewriters import FIND_A_TAG, FIND_EMBED_TAG, extract_attrs
 from wagtail.utils.pagination import paginate
 
@@ -356,7 +356,7 @@ class StreamFieldCollector:
 
         if not remaining_path:
             # End of path reached; return model instances found within `value`
-            if isinstance(current_block, RichTextBlock) and value is not None:
+            if isinstance(value, RichText):
                 # descend into rich text value and yield objects found within it
                 yield from find_objects_in_rich_text(value.source)
             elif isinstance(value, Model):
