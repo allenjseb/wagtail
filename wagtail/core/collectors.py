@@ -15,10 +15,9 @@ from modelcluster.fields import ParentalKey, ParentalManyToManyField
 from taggit.models import TaggedItemBase
 
 from wagtail.core.blocks import (
-    Block, ChooserBlock, ListBlock, RichTextBlock, StreamBlock, StreamValue, StructBlock,
-    StructValue)
+    Block, ChooserBlock, ListBlock, RichTextBlock, StreamBlock, StructBlock)
 from wagtail.core.fields import RichTextField, StreamField
-from wagtail.core.rich_text import RichText, features
+from wagtail.core.rich_text import features
 from wagtail.core.rich_text.rewriters import FIND_A_TAG, FIND_EMBED_TAG, extract_attrs
 from wagtail.utils.pagination import paginate
 
@@ -29,11 +28,9 @@ def get_obj_base_key(obj):
 
     This allows time and memory efficient object comparisons.
     """
-    if isinstance(obj, Model):
-        # base model = the non-abstract model class highest up the inheritance chain
-        base_model = ([obj._meta.model] + obj._meta.get_parent_list())[-1]
-        return base_model._meta.label, obj.pk
-    return obj
+    # base model = the non-abstract model class highest up the inheritance chain
+    base_model = ([obj._meta.model] + obj._meta.get_parent_list())[-1]
+    return base_model._meta.label, obj.pk
 
 
 def find_objects_in_rich_text(rich_text: str):
@@ -346,40 +343,53 @@ class StreamFieldCollector:
             if isinstance(block_path[-1], block_types):
                 yield block_path
 
-    def find_objects(self, stream, block_path):
+    def find_objects(self, value, block_path):
         """
-        Recursive generator yielding all values found
-        for a given ``block_path``.
+        Recursively traverse a StreamField value to find all sub-values corresponding to
+        the given block path, and yield all model instances found within those sub-values.
 
-        :param stream: ``StreamField`` value, regardless of its level
-            in the tree. It can be a ``StreamValue``, ``StructValue``, or any
-            data that can be contained by any type of ``Block``, leaf or not.
-        :param block_path: Tuple containing the path to a block.
+        :param value: A value existing at any level of ``StreamField`` data. The type of
+            this value must match the first item in ``block_path``.
+        :param block_path: The path to a block, as a tuple of block definition objects.
         """
-        if not block_path:
-            if isinstance(stream, RichText):
-                yield from find_objects_in_rich_text(stream.source)
-            else:
-                yield stream
-            return
-        current_block, *block_path = block_path
-        if isinstance(current_block, StreamBlock) \
-                and isinstance(stream, StreamValue):
-            for sub_value in stream:
-                yield from self.find_objects(sub_value, block_path)
-        elif isinstance(stream, StreamValue.StreamChild):
-            if stream.block == current_block:
-                yield from self.find_objects(stream.value, block_path)
-        elif isinstance(stream, StructValue):
-            if current_block.name in stream:
-                yield from self.find_objects(stream[current_block.name],
-                                             block_path)
-        elif current_block.name == '' and isinstance(stream, list):
-            for sub_value in stream:
-                yield from self.find_objects(sub_value, block_path)
+        current_block, *remaining_path = block_path
+
+        if not remaining_path:
+            # End of path reached; return model instances found within `value`
+            if isinstance(current_block, RichTextBlock) and value is not None:
+                # descend into rich text value and yield objects found within it
+                yield from find_objects_in_rich_text(value.source)
+            elif isinstance(value, Model):
+                yield value
         else:
-            warn('Unexpected StreamField value: <%s: %s>'
-                 % (type(stream), str(stream)[:30]))
+            if isinstance(current_block, ListBlock):
+                if value is not None:
+                    # all child values of a ListBlock satisfy block_path; iterate over all of them
+                    for child_value in value:
+                        yield from self.find_objects(child_value, remaining_path)
+            elif isinstance(current_block, StructBlock):
+                # the next block in block_path indicates an item within this value (a dict) to
+                # be traversed
+                child_block_name = remaining_path[0].name
+                try:
+                    child_value = value[child_block_name]
+                except (KeyError, TypeError):
+                    # value is None or does not contain child_block_name; stop traversing
+                    return
+
+                yield from self.find_objects(child_value, remaining_path)
+
+            elif isinstance(current_block, StreamBlock):
+                # traverse all stream children whose block definitions match the next block in block_path
+                child_block = remaining_path[0]
+
+                if value is not None:
+                    for stream_child in value:
+                        if stream_child.block == child_block:
+                            yield from self.find_objects(stream_child.value, remaining_path)
+            else:
+                warn("Unexpected StreamField block: don't know how to traverse %r (value: %r)"
+                     % (current_block, str(value)[:30]))
 
 
 class ModelStreamFieldsCollector:
@@ -481,8 +491,7 @@ class ModelStreamFieldsCollector:
                 for block_path in block_paths:
                     for found_value in collector.find_objects(
                             getattr(obj, collector.field.attname), block_path):
-                        if not searched_objects \
-                                or get_obj_base_key(found_value) in searched_data:
+                        if get_obj_base_key(found_value) in searched_data:
                             yield obj, found_value
 
 

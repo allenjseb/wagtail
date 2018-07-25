@@ -1,5 +1,3 @@
-import unittest
-
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
 from django.db import connection
@@ -216,7 +214,7 @@ class ModelStreamFieldCollectorTest(TestCase):
         stream_value = StreamModel._meta.get_field('body').to_python('''[
             {"type": "gallery", "value": [
                 {"type": "image_with_caption", "value": {
-                    "image": %d, "caption", "a Scotsman on a horse"
+                    "image": %d, "caption": "a Scotsman on a horse"
                 }}
             ]}
         ]''' % self.image12.id)
@@ -260,7 +258,6 @@ class ModelStreamFieldCollectorTest(TestCase):
             uses = self.get_image_uses(self.image5)
             self.assertListEqual(uses, [(self.obj5, self.image5)])
 
-    @unittest.expectedFailure
     def test_nested_stream(self):
         uses = self.get_image_uses(self.image12)
         self.assertListEqual(uses, [(self.obj12, self.image12), (self.obj13, self.image12)])
