@@ -485,25 +485,34 @@ class ModelStreamFieldsCollector:
             filters |= block_filter & value_filter
 
         searched_data = {get_obj_base_key(v) for v in searched_objects}
+
+        # look for candidate objects matching on these regexp filters
         for obj in self.model._default_manager.using(self.using) \
                 .filter(filters):
+            # for each candidate object, invoke a StreamFieldCollector on each StreamField defined on the model
             for collector, block_paths in block_paths_per_collector:
+                # Check each block path where object references may be found
                 for block_path in block_paths:
                     for found_value in collector.find_objects(
                             getattr(obj, collector.field.attname), block_path):
+                        # Yield value if it's one of the objects we're searching for
                         if get_obj_base_key(found_value) in searched_data:
                             yield obj, found_value
 
 
 class Use:
+    """
+    Identifies a place where a model instance has been referenced from another object, and the
+    on_delete behaviour of that relation
+    """
     def __init__(self, obj: Model, parent=None, on_delete=CASCADE, field=None):
-        self.object = obj
+        self.object = obj  # object containing the reference
         self.key = get_obj_base_key(obj)
-        self.parent = parent
+        self.parent = parent  # for CASCADE deletions, identifies the Use which would trigger the deletion of this one
         self.on_delete = on_delete
         self.field = field
 
-        self.depth = 0
+        self.depth = 0  # number of CASCADE steps away from the immediate object being deleted
         while parent is not None:
             self.depth += 1
             parent = parent.parent
@@ -511,6 +520,15 @@ class Use:
     @classmethod
     def from_flat_iterable(cls, iterable, on_delete=CASCADE, field=None,
                            exclude=None):
+        """
+        Given a sequence of model instances, yield a sequence of Use records
+        wrapping those instances. The sequence of models will be de-duplicated.
+
+        :param iterable: Iterable sequence of model instances
+        :param on_delete: on_delete behaviour to assign to the Use records
+        :param field: field identifier to assign to the Use records
+        :param exclude: Set of Use records to omit from the returned sequence. Will be modified in-place to include all returned records
+        """
         if exclude is None:
             exclude = set()
         for obj in iterable:
@@ -522,10 +540,27 @@ class Use:
     @classmethod
     def from_nested_list(cls, nested_list, parent=None, on_delete=CASCADE,
                          exclude=None, originals=()):
+        """
+        Given a sequence of model instances, which may contain sub-lists indicating cascading deletions,
+        yield a sequence of Use records.
+
+        :param nested_list: Iterable sequence of model instances; may contain sub-lists which indicate
+            cascading deletions from the previous model instance in the sequence
+        :param parent: For cascading deletions, the Use record to assign as the parent
+        :param on_delete: on_delete behaviour to assign to the Use records
+        :param exclude: Set of Use records to omit from the returned sequence. Will be modified
+            in-place to include all returned records
+        :param originals: List of original instances which we're finding references to, as opposed to ones which
+            appear in ``nested_list`` as part of a CASCADE chain
+        """
         if exclude is None:
             exclude = set()
+
+        # Retain the Use record for the most-recently-handled instance, as this will be used as the parent
+        # for any sub-lists we encounter
         main_use = None
-        for i, obj in enumerate(nested_list):
+
+        for obj in nested_list:
             if isinstance(obj, list):
                 yield from cls.from_nested_list(
                     obj, parent=main_use, on_delete=on_delete, exclude=exclude)
