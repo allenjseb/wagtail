@@ -508,14 +508,11 @@ class Use:
     def __init__(self, obj: Model, parent=None, on_delete=CASCADE, field=None):
         self.object = obj  # object containing the reference
         self.key = get_obj_base_key(obj)
-        self.parent = parent  # for CASCADE deletions, identifies the Use which would trigger the deletion of this one
         self.on_delete = on_delete
         self.field = field
 
-        self.depth = 0  # number of CASCADE steps away from the immediate object being deleted
-        while parent is not None:
-            self.depth += 1
-            parent = parent.parent
+        # number of CASCADE steps away from the immediate object being deleted
+        self.depth = 0 if parent is None else parent.depth + 1
 
     @classmethod
     def from_flat_iterable(cls, iterable, on_delete=CASCADE, field=None,
