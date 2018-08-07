@@ -541,6 +541,18 @@ class Use:
         Given a sequence of model instances, which may contain sub-lists indicating cascading deletions,
         yield a sequence of Use records.
 
+        ``nested_list`` is a complicated data structure returned by ``NestedObjects.nested()``.
+        The root contains all the objects passed in ``NestedObjects, as well as some related objects.
+        Suppose we have multiple items:
+        - ``original1`` & ``original2``, the originals we want to delete
+        - ``m2m11`` & ``m2m12``, two many-to-many items from ``original1``
+        - ``m2m21``, a many-to-many item from ``original2``
+        - ``related_fk``, an item that has a foreign key pointing to ``origina1``
+        - ``one_to_one``, an item that has a one_to_one pointing from or to ``original1``
+        - ``related_gfk``, an item that has a generic foreign key pointing to ``original1``
+        Then ``nested_list`` will be:
+        [original1, [m2m11, m2m12, related_fk], original2, [m2m21], one_to_one, related_gfk]
+
         :param nested_list: Iterable sequence of model instances; may contain sub-lists which indicate
             cascading deletions from the previous model instance in the sequence
         :param parent: For cascading deletions, the Use record to assign as the parent
@@ -555,24 +567,35 @@ class Use:
 
         # Retain the Use record for the most-recently-handled instance, as this will be used as the parent
         # for any sub-lists we encounter
-        main_use = None
+        parent_use = None
 
         for obj in nested_list:
             if isinstance(obj, list):
                 yield from cls.from_nested_list(
-                    obj, parent=main_use, on_delete=on_delete, exclude=exclude)
+                    obj, parent=parent_use, on_delete=on_delete, exclude=exclude)
             else:
                 use = cls(obj, parent=parent, on_delete=on_delete)
+                # When ``use`` was already listed, we don’t want to list it
+                # but we want to mark it as parent of the next item, in case
+                # that next item is a list.
                 if use in exclude:
-                    if use not in originals:
-                        for other_use in exclude:
-                            if use == other_use:
-                                main_use = other_use
-                                break
+                    # When ``use`` is in ``originals``, we don’t want
+                    # to mark it as parent of the next item because we want
+                    # to display the next item as root, otherwise the first
+                    # level of deleted objects would be shown nested.
+                    if use in originals:
+                        continue
+                    # Finds the already existing instance of ``Use``
+                    # for ``obj`` in ``exclude``
+                    # to avoid increasing RAM usage.
+                    for other_use in exclude:
+                        if use == other_use:
+                            parent_use = other_use
+                            break
                 else:
                     exclude.add(use)
                     yield use
-                    main_use = use
+                    parent_use = use
 
     def __hash__(self):
         return hash(self.key)
