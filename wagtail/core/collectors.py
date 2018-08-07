@@ -644,7 +644,7 @@ class Use:
         if self.is_root:
             return html
         return format_html('{}<i class="icon icon-arrow-right"></i> {}',
-                           (' ' * self.depth * 8), html)
+                           ('\u00A0' * self.depth * 8), html)
 
     def __html__(self):
         return self.get_html()
