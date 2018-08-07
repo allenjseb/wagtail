@@ -3,7 +3,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.db import connection
 from django.test import TestCase
 
-from wagtail.core.collectors import ModelRichTextCollector, ModelStreamFieldsCollector, get_all_uses
+from wagtail.core.collectors import ModelRichTextCollector, ModelStreamFieldsCollector, Use, get_all_uses
 from wagtail.core.models import Page
 from wagtail.core.rich_text import RichText
 from wagtail.documents.models import Document
@@ -62,75 +62,78 @@ class ModelRichTextCollectorTest(TestCase):
         # For query count consistency.
         ContentType.objects.clear_cache()
 
-    def get_uses(self, *objects):
+    def get_pairs(self, *objects):
+        """
+        Finds pairs between ``objects`` and related objects.
+        """
         return list(self.collector.find_objects(*objects))
 
-    def get_all_uses(self, *objects):
+    def get_all_pairs(self, *objects):
         return list(self.collector.find_all_objects())
 
     def test_empty(self):
         with self.assertNumQueries(1):
-            uses = self.get_uses(self.obj0)
-            self.assertListEqual(uses, [])
+            pairs = self.get_pairs(self.obj0)
+            self.assertListEqual(pairs, [])
 
     def test_simple(self):
         with self.assertNumQueries(4):
-            uses = self.get_uses(self.obj1)
-            self.assertListEqual(uses, [(self.obj2, self.obj1)])
+            pairs = self.get_pairs(self.obj1)
+            self.assertListEqual(pairs, [(self.obj2, self.obj1)])
 
     def test_wrapped_and_swapped(self):
         with self.assertNumQueries(4):
-            uses = self.get_uses(self.obj2)
-            self.assertListEqual(uses, [(self.obj3, self.obj2)])
+            pairs = self.get_pairs(self.obj2)
+            self.assertListEqual(pairs, [(self.obj3, self.obj2)])
 
         with self.assertNumQueries(3):
-            uses = self.get_uses(self.obj3)
-            self.assertListEqual(uses, [(self.obj4, self.obj3)])
+            pairs = self.get_pairs(self.obj3)
+            self.assertListEqual(pairs, [(self.obj4, self.obj3)])
 
     def test_nested(self):
         with self.assertNumQueries(4):
-            uses = self.get_uses(self.obj4)
-            self.assertListEqual(uses, [(self.obj5, self.obj4)])
+            pairs = self.get_pairs(self.obj4)
+            self.assertListEqual(pairs, [(self.obj5, self.obj4)])
 
     def test_find_all(self):
         with self.assertNumQueries(17):
-            uses = self.get_all_uses()
-            self.assertListEqual(uses, [(self.obj2, self.obj1),
-                                        (self.obj3, self.obj2),
-                                        (self.obj4, self.obj3),
-                                        (self.obj5, self.obj4),
-                                        (self.obj7, self.obj5),
-                                        (self.obj7, self.obj6),
-                                        (self.obj8, self.image),
-                                        (self.obj9, self.document),
-                                        (self.obj10, self.video)])
+            pairs = self.get_all_pairs()
+            self.assertListEqual(pairs, [(self.obj2, self.obj1),
+                                         (self.obj3, self.obj2),
+                                         (self.obj4, self.obj3),
+                                         (self.obj5, self.obj4),
+                                         (self.obj7, self.obj5),
+                                         (self.obj7, self.obj6),
+                                         (self.obj8, self.image),
+                                         (self.obj9, self.document),
+                                         (self.obj10, self.video)])
 
     def test_multiple(self):
         with self.assertNumQueries(0):
-            uses = self.get_uses()
-            self.assertListEqual(uses, [])
+            pairs = self.get_pairs()
+            self.assertListEqual(pairs, [])
 
         with self.assertNumQueries(6):
-            uses = self.get_uses(self.obj5)
-            self.assertListEqual(uses, [(self.obj7, self.obj5)])
+            pairs = self.get_pairs(self.obj5)
+            self.assertListEqual(pairs, [(self.obj7, self.obj5)])
 
         with self.assertNumQueries(5):
-            uses = self.get_uses(self.obj5, self.obj6)
-            self.assertListEqual(uses, [(self.obj7, self.obj5),
-                                        (self.obj7, self.obj6)])
+            pairs = self.get_pairs(self.obj5, self.obj6)
+            self.assertListEqual(pairs, [(self.obj7, self.obj5),
+                                         (self.obj7, self.obj6)])
 
     def test_other_types(self):
         with self.assertNumQueries(2):
-            uses = self.get_uses(self.image)
-            self.assertListEqual(uses, [(self.obj8, self.image)])
+            pairs = self.get_pairs(self.image)
+            self.assertListEqual(pairs, [(self.obj8, self.image)])
 
         with self.assertNumQueries(2):
-            uses = self.get_uses(self.document)
-            self.assertListEqual(uses, [(self.obj9, self.document)])
+            pairs = self.get_pairs(self.document)
+            self.assertListEqual(pairs, [(self.obj9, self.document)])
 
         with self.assertNumQueries(2):
-            uses = self.get_uses(self.video)
-            self.assertListEqual(uses, [(self.obj10, self.video)])
+            pairs = self.get_pairs(self.video)
+            self.assertListEqual(pairs, [(self.obj10, self.video)])
 
 
 class ModelStreamFieldCollectorTest(TestCase):
@@ -224,79 +227,79 @@ class ModelStreamFieldCollectorTest(TestCase):
         # For query count consistency.
         ContentType.objects.clear_cache()
 
-    def get_image_uses(self, *images):
+    def get_image_pairs(self, *images):
         return list(self.collector.find_objects(
             *images, block_types=(ImageChooserBlock,)))
 
     def test_empty(self):
         with self.assertNumQueries(1):
-            uses = self.get_image_uses(self.image0)
-            self.assertListEqual(uses, [])
+            pairs = self.get_image_pairs(self.image0)
+            self.assertListEqual(pairs, [])
 
     def test_single_root(self):
         with self.assertNumQueries(2):
-            uses = self.get_image_uses(self.image1)
-            self.assertListEqual(uses, [(self.obj1, self.image1)])
+            pairs = self.get_image_pairs(self.image1)
+            self.assertListEqual(pairs, [(self.obj1, self.image1)])
 
     def test_multiple_roots(self):
         with self.assertNumQueries(2):
-            uses = self.get_image_uses(self.image2)
-            self.assertListEqual(uses, [(self.obj2, self.image2)])
+            pairs = self.get_image_pairs(self.image2)
+            self.assertListEqual(pairs, [(self.obj2, self.image2)])
 
     def test_simple_struct(self):
         with self.assertNumQueries(2):
-            uses = self.get_image_uses(self.image3)
-            self.assertListEqual(uses, [(self.obj3, self.image3)])
+            pairs = self.get_image_pairs(self.image3)
+            self.assertListEqual(pairs, [(self.obj3, self.image3)])
 
     def test_list(self):
         with self.assertNumQueries(2):
-            uses = self.get_image_uses(self.image4)
-            self.assertListEqual(uses, [(self.obj4, self.image4)])
+            pairs = self.get_image_pairs(self.image4)
+            self.assertListEqual(pairs, [(self.obj4, self.image4)])
 
     def test_nested_structs(self):
         with self.assertNumQueries(2):
-            uses = self.get_image_uses(self.image5)
-            self.assertListEqual(uses, [(self.obj5, self.image5)])
+            pairs = self.get_image_pairs(self.image5)
+            self.assertListEqual(pairs, [(self.obj5, self.image5)])
 
     def test_nested_stream(self):
-        uses = self.get_image_uses(self.image12)
-        self.assertListEqual(uses, [(self.obj12, self.image12), (self.obj13, self.image12)])
+        pairs = self.get_image_pairs(self.image12)
+        self.assertListEqual(pairs, [(self.obj12, self.image12), (self.obj13, self.image12)])
 
     def test_multiple(self):
         with self.assertNumQueries(6):
-            uses = self.get_image_uses(self.image6)
-            self.assertListEqual(uses, [(self.obj6, self.image6),
-                                        (self.obj10, self.image6)])
+            pairs = self.get_image_pairs(self.image6)
+            self.assertListEqual(pairs, [(self.obj6, self.image6),
+                                         (self.obj10, self.image6)])
         with self.assertNumQueries(6):
-            uses = self.get_image_uses(self.image7)
-            self.assertListEqual(uses, [(self.obj6, self.image7),
-                                        (self.obj9, self.image7)])
+            pairs = self.get_image_pairs(self.image7)
+            self.assertListEqual(pairs, [(self.obj6, self.image7),
+                                         (self.obj9, self.image7)])
         with self.assertNumQueries(6):
-            uses = self.get_image_uses(self.image8)
-            self.assertListEqual(uses, [(self.obj6, self.image8),
-                                        (self.obj8, self.image8)])
+            pairs = self.get_image_pairs(self.image8)
+            self.assertListEqual(pairs, [(self.obj6, self.image8),
+                                         (self.obj8, self.image8)])
         with self.assertNumQueries(6):
-            uses = self.get_image_uses(self.image9)
-            self.assertListEqual(uses, [(self.obj6, self.image9),
-                                        (self.obj7, self.image9)])
+            pairs = self.get_image_pairs(self.image9)
+            self.assertListEqual(pairs, [(self.obj6, self.image9),
+                                         (self.obj7, self.image9)])
         with self.assertNumQueries(9):
-            uses = self.get_image_uses(self.image6, self.image7,
-                                       self.image8, self.image9,
-                                       self.image10)
-            self.assertListEqual(uses, [(self.obj6, self.image6),
-                                        (self.obj6, self.image10),
-                                        (self.obj6, self.image7),
-                                        (self.obj6, self.image8),
-                                        (self.obj6, self.image9),
-                                        (self.obj7, self.image9),
-                                        (self.obj8, self.image8),
-                                        (self.obj9, self.image7),
-                                        (self.obj10, self.image6)])
+            pairs = self.get_image_pairs(self.image6, self.image7,
+                                         self.image8, self.image9,
+                                         self.image10)
+            self.assertListEqual(pairs, [(self.obj6, self.image6),
+                                         (self.obj6, self.image10),
+                                         (self.obj6, self.image7),
+                                         (self.obj6, self.image8),
+                                         (self.obj6, self.image9),
+                                         (self.obj7, self.image9),
+                                         (self.obj8, self.image8),
+                                         (self.obj9, self.image7),
+                                         (self.obj10, self.image6)])
 
     def test_rich_text_block(self):
         with self.assertNumQueries(2):
-            uses = list(self.collector.find_objects(self.image11))
-            self.assertListEqual(uses, [(self.obj11, self.image11)])
+            pairs = list(self.collector.find_objects(self.image11))
+            self.assertListEqual(pairs, [(self.obj11, self.image11)])
 
 
 class GetAllUsesTest(TestCase):
@@ -337,28 +340,40 @@ class GetAllUsesTest(TestCase):
         # For query count consistency.
         ContentType.objects.clear_cache()
 
+
+    def to_uses(self, objects):
+        """
+        Converts nested Model instances into Use instances following the same structure.
+        """
+        if isinstance(objects, (tuple, list)):
+            return type(objects)(self.to_uses(obj) for obj in objects)
+        return Use(objects)
+
+    def assert_uses(self, uses, objects):
+        self.assertListEqual(uses, self.to_uses(objects))
+
     def test_empty(self):
         with self.assertNumQueries(57 if self.has_postgres_search else 55):
             uses = list(get_all_uses(self.obj0))
-            self.assertListEqual(uses, [])
+            self.assert_uses(uses, [])
 
     def test_foreign_key(self):
         with self.assertNumQueries(57 if self.has_postgres_search
                                    else (56 if self.is_sqlite else 55)):
             uses = list(get_all_uses(self.obj1))
-            self.assertListEqual(uses, [self.obj2])
+            self.assert_uses(uses, [self.obj2])
 
     def test_rich_text(self):
         with self.assertNumQueries(59 if self.has_postgres_search else 58):
             uses = list(get_all_uses(self.obj3))
-            self.assertListEqual(uses, [self.obj4])
+            self.assert_uses(uses, [self.obj4])
 
     def test_streamfield(self):
         with self.assertNumQueries(59 if self.has_postgres_search else 58):
             uses = list(get_all_uses(self.obj3))
-            self.assertListEqual(uses, [self.obj4])
+            self.assert_uses(uses, [self.obj4])
 
     def test_multiple(self):
         with self.assertNumQueries(50 if self.has_postgres_search or self.is_sqlite else 49):
             uses = list(get_all_uses(self.obj7))
-            self.assertListEqual(uses, [self.obj8, self.obj9, self.obj10])
+            self.assert_uses(uses, [self.obj8, self.obj9, self.obj10])
