@@ -583,7 +583,8 @@ class Use:
     def __eq__(self, other):
         if isinstance(other, Use):
             return self.key == other.key
-        return self.key == get_obj_base_key(other)
+        raise ValueError('Cannot compare Use with %s.'
+                         % other.__class__.__name__)
 
     @property
     def is_root(self):
